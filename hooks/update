@@ -1,0 +1,81 @@
+#!/usr/bin/python3
+from argparse import ArgumentParser
+from dataclasses import dataclass
+from enum import Enum
+from subprocess import check_output
+from sys import exit as sys_exit, stderr, stdout
+
+_ZERO = '0000000000000000000000000000000000000000'
+
+
+class Error(Exception):
+    def __init__(self, message: str):
+        self.message = message
+
+
+class _RevType(str, Enum):
+    COMMIT = 'commit'
+    DELETE = 'delete'
+    TAG = 'tag'
+
+
+@dataclass
+class _Args:
+    ref_name: str
+    old_rev: str
+    new_rev: str
+
+
+def _parse_args() -> _Args:
+    parser = ArgumentParser()
+    parser.add_argument('ref_name', help='Example: refs/heads/master')
+    parser.add_argument(
+        'old_rev', help='Example: 2cda4e8204aeb98f2044c0f902c1bd38963a86af'
+    )
+    parser.add_argument(
+        'new_rev', help='Example: 2aa956c964f571ea7f320dc2f37a3143dc7c8da0'
+    )
+    return _Args(**vars(parser.parse_args()))
+
+
+def _get_rev_type(rev: str) -> _RevType:
+    if rev == _ZERO:
+        return _RevType.DELETE
+
+    result = check_output(['git', 'cat-file', '-t', rev])
+    return _RevType(result.strip().decode())
+
+
+def _assert_action(ref_name: str, old_rev_type: _RevType, new_rev_type: _RevType):
+    if ref_name.startswith('refs/heads/'):
+        if old_rev_type == _RevType.DELETE and new_rev_type == _RevType.COMMIT:
+            if ref_name.rsplit(sep='/', maxsplit=1)[-1] != 'master':
+                raise Error('*** Creating a branch is not allowed in this repository')
+        if new_rev_type == _RevType.DELETE:
+            raise Error('*** Deleting a branch is not allowed in this repository')
+    elif ref_name.startswith('refs/tags'):
+        if old_rev_type == _RevType.DELETE and new_rev_type == _RevType.TAG:
+            raise Error('*** Creating a tag is not allowed in this repository')
+        if old_rev_type == _RevType.TAG and new_rev_type == _RevType.DELETE:
+            raise Error('*** Deleting a tag is not allowed in this repository')
+
+
+def main() -> int:
+    print('update hook', file=stdout)
+    args = _parse_args()
+
+    print('Hello!', args, file=stdout)
+    old_rev_type = _get_rev_type(args.old_rev)
+    new_rev_type = _get_rev_type(args.new_rev)
+
+    try:
+        _assert_action(args.ref_name, old_rev_type, new_rev_type)
+    except Error as err:
+        stderr.write(err.message + '\n')
+        return 1
+
+    return 0
+
+
+if __name__ == '__main__':
+    sys_exit(main())

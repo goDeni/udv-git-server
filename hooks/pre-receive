@@ -1,0 +1,20 @@
+#!/usr/bin/python3
+from sys import exit as sys_exit, stdin, stdout
+from subprocess import check_output
+
+_ZERO = '0000000000000000000000000000000000000000'
+
+print('pre-receive hook', file=stdout)
+
+for line in stdin.read().splitlines():
+    old_value, new_value, ref_name = line.split()
+    print('ref', ref_name, file=stdout)
+    revisions = new_value
+    if old_value != _ZERO:
+        revisions = f"{old_value}..{new_value}"
+
+    commit_messages = check_output(["git", "log", "--pretty=format:%s", revisions])
+    for message in commit_messages.decode().splitlines():
+        print(f"Commit message validation: '{message}'", file=stdout)
+
+sys_exit(0)
